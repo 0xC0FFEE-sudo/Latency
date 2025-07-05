@@ -1,4 +1,4 @@
-# Latency-X: Qubic-Accelerated DeFi HFT Trading Bot (Student Edition)
+# Latency-X: Helius-Accelerated DeFi HFT Trading Bot (Student Edition)
 
 ## Objective
 
