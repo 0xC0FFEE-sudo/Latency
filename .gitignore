@@ -1,0 +1,15 @@
+# Rust build artifacts
+latency-x-core/target/
+
+# Local configuration - do not commit this.
+# Commit the Config.toml.example file instead.
+latency-x-core/Config.toml
+
+# IDE/Editor files
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS-specific files
+.DS_Store 

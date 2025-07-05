@@ -1,0 +1,38 @@
+# Example configuration for Latency-X
+#
+# Copy this file to Config.toml and edit it with your settings.
+# For sensitive values like API keys, it's recommended to use environment variables.
+# The application will substitute any value starting with '$' with the corresponding
+# environment variable. For example, api_key = "$KRAKEN_API_KEY" will be loaded
+# from the KRAKEN_API_KEY environment variable.
+
+[kraken]
+# API key for Kraken Pro
+api_key = "YOUR_KRAKEN_API_KEY"
+# API secret for Kraken Pro
+api_secret = "YOUR_KRAKEN_API_SECRET"
+
+[solana]
+# Your Solana wallet private key (base58 encoded string).
+# It's highly recommended to load this from an environment variable.
+# e.g., private_key = "$SOLANA_PRIVATE_KEY"
+private_key = "YOUR_SOLANA_PRIVATE_KEY"
+
+# Solana RPC endpoint URL
+rpc_url = "https://api.mainnet-beta.solana.com"
+
+# Solana WebSocket endpoint URL
+ws_url = "wss://api.mainnet-beta.solana.com"
+
+[pump_strategy]
+# The amount of token to buy in a single transaction for the pump.fun strategy.
+buy_token_amount = 1.0
+
+# The maximum price in SOL you are willing to pay per token.
+max_sol_price_per_token = 0.01
+
+[helius]
+# API key for Helius, used for enhanced Solana RPC capabilities.
+# It's recommended to load this from an environment variable.
+# e.g., api_key = "$HELIUS_API_KEY"
+api_key = "YOUR_HELIUS_API_KEY" 
