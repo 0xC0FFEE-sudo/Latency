@@ -1,6 +1,7 @@
 use crate::connectors::Connector;
 use crate::execution::ExecutionGateway;
-use crate::models::{MarketDataSource, Order, Tick};
+use crate::models::{Fill, MarketDataSource, Order, Tick};
+use crate::settlement::Settlement;
 use anyhow::Result;
 use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
@@ -12,11 +13,18 @@ use sha2::{Digest, Sha256, Sha512};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::connect_async;
 use url::Url;
 use crate::config::KrakenConfig;
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
+use chrono::Utc;
+use tracing::{error, info};
+use crate::dashboard::events::DashboardEvent;
+use tokio::sync::broadcast;
+use tracing::warn;
+use uuid::Uuid;
 
 
 const KRAKEN_WSS_URL: &str = "wss://ws.kraken.com/";
@@ -24,13 +32,24 @@ const KRAKEN_WSS_URL: &str = "wss://ws.kraken.com/";
 pub struct KrakenConnector {
     api_key: String,
     api_secret: String,
+    settlement: Arc<dyn Settlement>,
+    fill_sender: Option<Sender<Fill>>,
+    dashboard_tx: broadcast::Sender<DashboardEvent>,
 }
 
 impl KrakenConnector {
-    pub fn new(config: &KrakenConfig) -> Self {
+    pub fn new(
+        kraken_config: &KrakenConfig,
+        settlement: Arc<dyn Settlement>,
+        fill_sender: Option<Sender<Fill>>,
+        dashboard_tx: broadcast::Sender<DashboardEvent>,
+    ) -> Self {
         Self {
-            api_key: config.api_key.clone(),
-            api_secret: config.api_secret.clone(),
+            api_key: kraken_config.api_key.clone(),
+            api_secret: kraken_config.api_secret.clone(),
+            settlement,
+            fill_sender,
+            dashboard_tx,
         }
     }
 
@@ -64,7 +83,7 @@ impl Connector for KrakenConnector {
     ) -> Result<()> {
         let operation = || async {
             let url = Url::parse(KRAKEN_WSS_URL).map_err(|e| backoff::Error::transient(e.into()))?;
-            let (ws_stream, _) = connect_async(url).await.map_err(|e| backoff::Error::transient(e.into()))?;
+            let (ws_stream, _) = connect_async(url.as_str()).await.map_err(|e| backoff::Error::transient(e.into()))?;
             let (mut write, mut read) = ws_stream.split();
 
             let subscribe_msg = json!({
@@ -100,13 +119,14 @@ impl Connector for KrakenConnector {
                                 symbol,
                                 price,
                                 volume,
-                                timestamp_ms: (timestamp * 1000.0) as u64,
+                                received_at: Utc::now(),
                             };
 
-                            if let Err(e) = sender.send(tick).await {
+                            if let Err(e) = sender.send(tick.clone()).await {
                                 eprintln!("[KRAKEN] Failed to send tick: {}", e);
                                 break;
                             }
+                            let _ = self.dashboard_tx.send(DashboardEvent::Tick(tick));
                         }
                     }
                 }
@@ -116,11 +136,40 @@ impl Connector for KrakenConnector {
 
         retry(ExponentialBackoff::default(), operation).await
     }
+
+    fn get_source(&self) -> MarketDataSource {
+        MarketDataSource::Kraken
+    }
 }
 
 #[async_trait]
 impl ExecutionGateway for KrakenConnector {
     async fn send_order(&self, order: Order) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let executed_at = Utc::now();
+
+        if let Some(tick) = &order.triggering_tick {
+            let latency = executed_at.signed_duration_since(tick.received_at);
+            let latency_us = latency.num_microseconds().unwrap_or(-1);
+            info!(
+                latency_us = latency_us,
+                order_id = %order.id,
+                "Tick-to-trade latency"
+            );
+            let _ = self.dashboard_tx.send(DashboardEvent::LatencyUpdate {
+                order_id: order.id.clone(),
+                latency_us: latency_us as u64,
+            });
+        }
+
+        info!(
+            order_id = %order.id,
+            symbol = %order.symbol,
+            side = ?order.side,
+            amount = %order.amount,
+            price = ?order.price,
+            "Executing order"
+        );
+
         let client = reqwest::Client::new();
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -131,7 +180,7 @@ impl ExecutionGateway for KrakenConnector {
             ("nonce", nonce.clone()),
             ("ordertype", order.order_type.to_string()),
             ("type", order.side.to_string().to_lowercase()),
-            ("volume", order.quantity.to_string()),
+            ("volume", order.amount.to_string()),
             ("pair", order.symbol.clone()),
         ];
         if let Some(price) = order.price {
@@ -164,6 +213,42 @@ impl ExecutionGateway for KrakenConnector {
                 return Err(format!("Kraken API Error: {:?}", error).into());
             }
         }
+
+        let price = order.price.unwrap_or_else(|| {
+            warn!("Order price is None, using 1.0 as a mock price");
+            1.0
+        });
+
+        let fill = Fill {
+            order_id: order.id,
+            symbol: order.symbol.clone(),
+            side: order.side,
+            price,
+            quantity: order.amount,
+            source: MarketDataSource::Kraken,
+            executed_at,
+        };
+
+        if let Some(sender) = &self.fill_sender {
+            if let Err(e) = sender.send(fill.clone()).await {
+                error!("Failed to send fill: {}", e);
+            }
+        }
+
+        let trade = crate::models::Trade {
+            id: Uuid::new_v4(),
+            order_id: fill.order_id,
+            symbol: fill.symbol,
+            side: fill.side,
+            amount: fill.quantity,
+            price: fill.price,
+            source: fill.source,
+            executed_at: fill.executed_at,
+        };
+
+        let _ = self.dashboard_tx.send(DashboardEvent::Trade(trade));
+
+        self.settlement.send_order(&order).await?;
 
         if let Some(txid) = response_json["result"]["txid"].as_array() {
             if !txid.is_empty() {

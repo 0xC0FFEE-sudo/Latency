@@ -109,7 +109,7 @@ impl ExecutionGateway for PumpConnector {
         }
 
         let mint_str = order.symbol;
-        let token_amount = (order.quantity * 1_000_000.0) as u64; // Assuming 6 decimal places
+        let token_amount = (order.amount * 1_000_000.0) as u64; // Assuming 6 decimal places
         let max_sol_cost = (order.price.unwrap_or(0.0) * 1_000_000_000.0) as u64;
 
         if max_sol_cost == 0 {

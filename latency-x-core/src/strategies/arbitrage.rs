@@ -66,66 +66,42 @@ where
 
                 if spread > 0.0 {
                     // Buy on exchange1, sell on exchange2
-                    let buy_order = Order {
-                        id: Uuid::new_v4().to_string(),
-                        source: tick1.source.clone(),
-                        source_address: "source_address_placeholder".to_string(),
-                        destination_address: "destination_address_placeholder".to_string(),
-                        symbol: tick1.symbol.clone(),
-                        side: OrderSide::Buy,
-                        order_type: OrderType::Limit,
-                        price: Some(tick1.price),
-                        quantity: self.quantity,
-                        status: OrderStatus::New,
-                        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                    };
+                    let buy_order = Order::market(
+                        tick1.symbol.clone(),
+                        OrderSide::Buy,
+                        1.0,
+                        MarketDataSource::Binance,
+                        Some(Box::new(tick.clone()))
+                    );
 
-                    let sell_order = Order {
-                        id: Uuid::new_v4().to_string(),
-                        source: tick2.source.clone(),
-                        source_address: "source_address_placeholder".to_string(),
-                        destination_address: "destination_address_placeholder".to_string(),
-                        symbol: tick2.symbol.clone(),
-                        side: OrderSide::Sell,
-                        order_type: OrderType::Limit,
-                        price: Some(tick2.price),
-                        quantity: self.quantity,
-                        status: OrderStatus::New,
-                        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                    };
+                    let sell_order = Order::market(
+                        tick2.symbol.clone(),
+                        OrderSide::Sell,
+                        1.0,
+                        MarketDataSource::Kraken,
+                        Some(Box::new(tick.clone()))
+                    );
 
                     self.exchange1.send_order(buy_order).await.map_err(|e| anyhow::anyhow!(e))?;
                     self.exchange2.send_order(sell_order).await.map_err(|e| anyhow::anyhow!(e))?;
 
                 } else {
                     // Buy on exchange2, sell on exchange1
-                    let buy_order = Order {
-                        id: Uuid::new_v4().to_string(),
-                        source: tick2.source.clone(),
-                        source_address: "source_address_placeholder".to_string(),
-                        destination_address: "destination_address_placeholder".to_string(),
-                        symbol: tick2.symbol.clone(),
-                        side: OrderSide::Buy,
-                        order_type: OrderType::Limit,
-                        price: Some(tick2.price),
-                        quantity: self.quantity,
-                        status: OrderStatus::New,
-                        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                    };
+                    let buy_order = Order::market(
+                        tick2.symbol.clone(),
+                        OrderSide::Buy,
+                        1.0,
+                        MarketDataSource::Kraken,
+                        Some(Box::new(tick.clone()))
+                    );
 
-                    let sell_order = Order {
-                        id: Uuid::new_v4().to_string(),
-                        source: tick1.source.clone(),
-                        source_address: "source_address_placeholder".to_string(),
-                        destination_address: "destination_address_placeholder".to_string(),
-                        symbol: tick1.symbol.clone(),
-                        side: OrderSide::Sell,
-                        order_type: OrderType::Limit,
-                        price: Some(tick1.price),
-                        quantity: self.quantity,
-                        status: OrderStatus::New,
-                        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                    };
+                    let sell_order = Order::market(
+                        tick1.symbol.clone(),
+                        OrderSide::Sell,
+                        1.0,
+                        MarketDataSource::Binance,
+                        Some(Box::new(tick.clone()))
+                    );
                     self.exchange2.send_order(buy_order).await.map_err(|e| anyhow::anyhow!(e))?;
                     self.exchange1.send_order(sell_order).await.map_err(|e| anyhow::anyhow!(e))?;
                 }

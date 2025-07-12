@@ -9,6 +9,10 @@ use borsh::BorshDeserialize;
 use base64::{engine::general_purpose, Engine as _};
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
+use uuid::Uuid;
+use chrono::Utc;
+use crate::models::OrderStatus;
+use crate::models::MarketDataSource;
 
 const PUMP_PROGRAM_ID: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 const CREATE_EVENT_DISCRIMINATOR: [u8; 8] = [84, 97, 40, 193, 72, 143, 120, 163];
@@ -69,17 +73,16 @@ impl BuyNewTokenStrategy {
                                     println!("Mint: {}", event.mint);
 
                                     let order = Order {
-                                        id: uuid::Uuid::new_v4().to_string(),
-                                        source: crate::models::MarketDataSource::PumpFun,
-                                        source_address: "source_address_placeholder".to_string(),
-                                        destination_address: "destination_address_placeholder".to_string(),
+                                        id: Uuid::new_v4(),
                                         symbol: event.mint.to_string(),
                                         side: OrderSide::Buy,
-                                        order_type: OrderType::Market,
-                                        quantity: self.buy_token_amount,
+                                        order_type: OrderType::Limit,
+                                        amount: self.buy_token_amount,
                                         price: Some(self.max_sol_price_per_token),
-                                        status: crate::models::OrderStatus::New,
-                                        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                                        status: OrderStatus::New,
+                                        source: MarketDataSource::PumpFun,
+                                        created_at: Utc::now(),
+                                        triggering_tick: None,
                                     };
                                     
                                     match self.execution_gateway.send_order(order).await {

@@ -9,16 +9,13 @@ path = "src/lib.rs"
 
 [dependencies]
 tokio = { version = "1.36.0", features = ["full"] }
-tokio-tungstenite = "0.21.0"
-futures-util = "0.3"
-serde = { version = "1.0", features = ["derive"] }
+futures-util = "0.3.30"
+serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0"
-log = "0.4.14"
+log = "0.4.21"
 env_logger = "0.9.0"
-anyhow = "1.0.75"
-async-trait = "0.1.77"
-url = "2.5.0"
-uuid = { version = "1.7.0", features = ["v4"] }
+async-trait = "0.1.80"
+uuid = { version = "1.7.0", features = ["v4", "serde"] }
 solana-rpc-client = "1.18.17"
 solana-rpc-client-api = "1.18.17"
 solana-pubsub-client = "1.18.17"
@@ -32,20 +29,38 @@ solana-transaction-status = "1.18.12"
 reqwest = { version = "0.11", features = ["json"] }
 hmac-sha256 = "1.0"
 hex = "0.4"
-chrono = "0.4.35"
+chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22.1"
 sha2 = "0.10.8"
 hmac = "0.12"
 config = "0.14.0"
-helius-sdk = "0.1.0"
+# helius-sdk = { version = "1.1.1", features = ["rpc-client"] }
 backoff = { version = "0.4.0", features = ["tokio"] }
 clap = { version = "4.0", features = ["derive"] }
 dotenvy = "0.15.7"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "registry"] }
 metrics = "0.22.0"
 metrics-exporter-prometheus = "0.13.0"
 csv = "1.3.0"
+redis = { version = "0.25.3", features = ["tokio-comp"] }
+# cbadv = { version = "0.3.4", features = ["feed"] }
+core_affinity = "0.8.1"
+axum = { version = "0.7.5", features = ["ws", "macros"] }
+tower-http = { version = "0.5.2", features = ["fs", "cors"] }
+futures = "0.3"
+rand = "0.8"
+thiserror = "1.0"
+strum = "0.26.2"
+strum_macros = "0.26.2"
+tokio-tungstenite = { version = "0.23", features = ["native-tls"] }
+url = "2.5"
+anyhow = "1.0"
+pin-project = "1.1.5"
+helius-sdk = "0.2.0"
+
+[features]
+default = []
 
 [dev-dependencies]
 mockall = "0.12.1"
@@ -57,9 +72,5 @@ path = "src/main.rs"
 [[bin]]
 name = "pump-trader"
 path = "src/bin/pump_trader.rs"
-
-[[bin]]
-name = "latency-x-backtester"
-path = "src/bin/backtester.rs"
 
 [workspace]

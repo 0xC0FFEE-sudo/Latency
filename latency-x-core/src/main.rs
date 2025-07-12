@@ -1,16 +1,36 @@
-use latency_x_core::connectors::{binance::BinanceConnector, kraken::KrakenConnector};
-use latency_x_core::connectors::Connector;
-use latency_x_core::execution::ExecutionGateway;
-use latency_x_core::strategies::arbitrage::Arbitrage;
-use latency_x_core::strategies::market_maker::MarketMaker;
-use latency_x_core::strategies::Strategy;
-use latency_x_core::config::Config;
+mod config;
+mod connectors;
+mod dashboard;
+mod execution;
+mod models;
+mod persistence;
+mod risk;
+mod settlement;
+mod strategies;
+
+use crate::connectors::{binance::BinanceConnector, kraken::KrakenConnector};
+use crate::connectors::Connector;
+use crate::execution::ExecutionGateway;
+use crate::models::Fill;
+use crate::persistence::PersistenceManager;
+use crate::risk::RiskManager;
+use crate::settlement::{helius::HeliusSettlement, Settlement};
+use crate::strategies::arbitrage::Arbitrage;
+use crate::strategies::market_maker::MarketMaker;
+use crate::strategies::Strategy;
+use crate::config::Config;
+use crate::dashboard::broadcaster_layer::DashboardBroadcastLayer;
+use crate::strategies::mev::MevStrategy;
+use crate::dashboard::server::start_dashboard_server;
+use crate::dashboard::events::DashboardEvent;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use clap::Parser;
 use tracing_subscriber::{self, EnvFilter};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
+use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+use tokio::sync::broadcast;
 
 /// A high-frequency trading bot in Rust
 #[derive(Parser, Debug)]
@@ -25,16 +45,23 @@ struct Cli {
 enum StrategyChoice {
     Arbitrage,
     MarketMaker,
+    Mev,
 }
 
 #[tokio::main]
-async fn main() {
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .json()
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-    
+async fn main() -> anyhow::Result<()> {
+    let (dashboard_tx, _) = broadcast::channel::<DashboardEvent>(1024);
+
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,latency_x_core=trace"));
+    let broadcast_layer = DashboardBroadcastLayer::new(dashboard_tx.clone());
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(tracing_subscriber::fmt::layer().with_ansi(false))
+        .with(broadcast_layer)
+        .init();
+
     let builder = PrometheusBuilder::new();
     let addr: SocketAddr = ([127, 0, 0, 1], 9000).into();
     builder
@@ -42,24 +69,40 @@ async fn main() {
         .install()
         .expect("failed to install Prometheus exporter");
 
-    tracing::info!(metrics_addr = %addr, "Prometheus exporter listening");
-    
-    tracing::info!("Starting Latency-X Core");
+    let core_ids = core_affinity::get_core_ids().unwrap();
+    if core_ids.len() < 4 {
+        anyhow::bail!("This application requires at least 4 CPU cores to run effectively.");
+    }
+
+    let dashboard_tx_clone = dashboard_tx.clone();
+    let dashboard_core = core_ids[3];
+    let core_handle = tokio::spawn(async move {
+        core_affinity::set_for_current(dashboard_core);
+        start_dashboard_server(dashboard_tx_clone).await;
+    });
 
     let cli = Cli::parse();
 
     let config = Config::from_file("latency-x-core/Config.toml").expect("Failed to load config");
 
-    let (tx, mut rx) = mpsc::channel(1024);
+    let persistence = Arc::new(PersistenceManager::new(&config.redis)?);
+    let risk_manager = Arc::new(RiskManager::new(persistence).await?);
 
-    let binance_connector = Arc::new(BinanceConnector::new());
-    let kraken_connector = Arc::new(KrakenConnector::new(&config.kraken));
+    let (tx, mut rx) = mpsc::channel(1024);
+    let (fill_tx, mut fill_rx) = mpsc::channel::<Fill>(1024);
+
+    let settlement: Arc<dyn Settlement> = Arc::new(HeliusSettlement::new(&config.helius)?);
+
+    let binance_connector = Arc::new(BinanceConnector::new(settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone()));
+    let kraken_connector = Arc::new(KrakenConnector::new(&config.kraken, settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone()));
     let binance_symbols = vec!["btcusdt".to_string()];
     let kraken_symbols = vec!["BTC/USD".to_string()];
 
     let binance_tx = tx.clone();
     let binance_connector_clone = binance_connector.clone();
+    let binance_core = core_ids[0];
     tokio::spawn(async move {
+        core_affinity::set_for_current(binance_core);
         if let Err(e) = binance_connector_clone.subscribe(&binance_symbols, binance_tx).await {
             tracing::error!("Binance connector error: {}", e);
         }
@@ -67,7 +110,9 @@ async fn main() {
 
     let kraken_tx = tx.clone();
     let kraken_connector_clone = kraken_connector.clone();
+    let kraken_core = core_ids[1];
     tokio::spawn(async move {
+        core_affinity::set_for_current(kraken_core);
         if let Err(e) = kraken_connector_clone.subscribe(&kraken_symbols, kraken_tx).await {
             tracing::error!("Kraken connector error: {}", e);
         }
@@ -83,11 +128,31 @@ async fn main() {
         StrategyChoice::MarketMaker => {
             Box::new(MarketMaker::new(binance_execution, 0.01, 0.01))
         }
+        StrategyChoice::Mev => {
+            // For now, we'll only use the binance connector for triangular arbitrage.
+            let mev_execution: Arc<dyn ExecutionGateway> = Arc::new(BinanceConnector::new(settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone()));
+            Box::new(MevStrategy::new(
+                mev_execution,
+                &config.mev_strategy,
+            ))
+        }
     };
+
+    // This is a placeholder for the risk manager loop
+    let rm_clone = risk_manager.clone();
+    let risk_manager_core = core_ids[2];
+    tokio::spawn(async move {
+        core_affinity::set_for_current(risk_manager_core);
+        while let Some(fill) = fill_rx.recv().await {
+            rm_clone.on_fill(&fill).await;
+        }
+    });
 
     while let Some(tick) = rx.recv().await {
         if let Err(e) = strategy.on_tick(&tick).await {
             tracing::error!("Strategy error: {}", e);
         }
     }
+
+    Ok(())
 }

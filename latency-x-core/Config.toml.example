@@ -35,4 +35,27 @@ max_sol_price_per_token = 0.01
 # API key for Helius, used for enhanced Solana RPC capabilities.
 # It's recommended to load this from an environment variable.
 # e.g., api_key = "$HELIUS_API_KEY"
-api_key = "YOUR_HELIUS_API_KEY" 
+api_key = "YOUR_HELIUS_API_KEY"
+
+[mev_strategy]
+# The three assets to use for triangular arbitrage (A -> B -> C -> A)
+asset_a = "ETH"
+asset_b = "BTC"
+asset_c = "USDT"
+
+# The amount of asset_b to start the arbitrage with.
+trade_amount_b = 0.01
+
+# The minimum profit percentage required to execute the arbitrage.
+# 0.001 means a 0.1% profit.
+min_profit_threshold = 0.001
+
+[redis]
+# The connection URL for the Redis server used for persistence.
+url = "redis://127.0.0.1/"
+
+[coinbase]
+# API key for Coinbase Advanced Trade
+api_key = "YOUR_COINBASE_API_KEY"
+# API secret for Coinbase Advanced Trade
+api_secret = "YOUR_COINBASE_API_SECRET" 

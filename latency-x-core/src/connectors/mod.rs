@@ -1,8 +1,9 @@
 pub mod binance;
-pub mod pump;
+// pub mod coinbase;
 pub mod kraken;
+pub mod pump;
 
-use crate::models::Tick;
+use crate::models::{Tick, MarketDataSource};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -15,4 +16,5 @@ pub trait Connector: Send + Sync {
         symbols: &[String],
         sender: mpsc::Sender<Tick>,
     ) -> Result<()>;
+    fn get_source(&self) -> MarketDataSource;
 } 

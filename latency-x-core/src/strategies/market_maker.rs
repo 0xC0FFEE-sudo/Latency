@@ -7,12 +7,17 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use metrics::{counter, gauge};
+use chrono::Utc;
+use log::error;
 
 pub struct MarketMaker<E: ExecutionGateway + ?Sized> {
     execution_gateway: Arc<E>,
     last_price: Arc<Mutex<Option<f64>>>,
     spread: f64,
     quantity: f64,
+    symbol: String,
+    order_size: f64,
+    ticks: Vec<Tick>,
 }
 
 impl<E: ExecutionGateway + Send + Sync + 'static + ?Sized> MarketMaker<E> {
@@ -22,6 +27,9 @@ impl<E: ExecutionGateway + Send + Sync + 'static + ?Sized> MarketMaker<E> {
             last_price: Arc::new(Mutex::new(None)),
             spread,
             quantity,
+            symbol: "BTCUSDT".to_string(), // Placeholder, will be set later
+            order_size: quantity,
+            ticks: Vec::new(),
         }
     }
 }
@@ -40,31 +48,29 @@ impl<E: ExecutionGateway + Send + Sync + 'static + ?Sized> Strategy for MarketMa
             let sell_price = tick.price * (1.0 + self.spread);
 
             let buy_order = Order {
-                id: Uuid::new_v4().to_string(),
-                source: tick.source.clone(),
-                source_address: "source_address_placeholder".to_string(),
-                destination_address: "destination_address_placeholder".to_string(),
+                id: Uuid::new_v4(),
                 symbol: tick.symbol.clone(),
                 side: OrderSide::Buy,
                 order_type: OrderType::Limit,
+                amount: self.quantity,
                 price: Some(buy_price),
-                quantity: self.quantity,
                 status: OrderStatus::New,
-                timestamp_ms: tick.timestamp_ms,
+                source: tick.source,
+                created_at: Utc::now(),
+                triggering_tick: Some(Box::new(tick.clone())),
             };
 
             let sell_order = Order {
-                id: Uuid::new_v4().to_string(),
-                source: tick.source.clone(),
-                source_address: "source_address_placeholder".to_string(),
-                destination_address: "destination_address_placeholder".to_string(),
+                id: Uuid::new_v4(),
                 symbol: tick.symbol.clone(),
                 side: OrderSide::Sell,
                 order_type: OrderType::Limit,
+                amount: self.quantity,
                 price: Some(sell_price),
-                quantity: self.quantity,
                 status: OrderStatus::New,
-                timestamp_ms: tick.timestamp_ms,
+                source: tick.source,
+                created_at: Utc::now(),
+                triggering_tick: Some(Box::new(tick.clone())),
             };
             
             counter!("orders_created", "strategy" => "market_maker", "side" => "buy").increment(1);
@@ -98,7 +104,7 @@ mod tests {
             symbol: "BTCUSDT".to_string(),
             price: 50000.0,
             volume: 1.0,
-            timestamp_ms: 0,
+            received_at: Utc::now(),
         };
 
         // Act

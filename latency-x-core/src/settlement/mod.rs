@@ -1,10 +1,11 @@
-use crate::models::Order;
-use anyhow::Result;
-use async_trait::async_trait;
-
 pub mod helius;
- 
+pub mod solana;
+
+use crate::models::Order;
+use async_trait::async_trait;
+use std::error::Error;
+
 #[async_trait]
-pub trait SettlementHandler: Send + Sync {
-    async fn settle(&self, order: &Order) -> Result<String>;
-} 
+pub trait Settlement: Send + Sync {
+    async fn send_order(&self, order: &Order) -> Result<String, Box<dyn Error + Send + Sync>>;
+}

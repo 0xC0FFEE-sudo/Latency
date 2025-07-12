@@ -1,103 +1,142 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::fmt;
+use strum_macros::Display;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]
 pub enum MarketDataSource {
     Binance,
     Kraken,
     Coinbase,
-    Bullx,
-    Pump,
     PumpFun,
-    Axiom,
-    Photon,
-    UniswapV3,
 }
 
-impl ToString for MarketDataSource {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for MarketDataSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MarketDataSource::Binance => "Binance".to_string(),
-            MarketDataSource::Kraken => "Kraken".to_string(),
-            MarketDataSource::Pump => "Pump".to_string(),
-            MarketDataSource::PumpFun => "PumpFun".to_string(),
-            _ => format!("{:?}", self),
+            MarketDataSource::Binance => write!(f, "Binance"),
+            MarketDataSource::Kraken => write!(f, "Kraken"),
+            MarketDataSource::Coinbase => write!(f, "Coinbase"),
+            MarketDataSource::PumpFun => write!(f, "Pump.fun"),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tick {
     pub source: MarketDataSource,
     pub symbol: String,
-    pub timestamp_ms: u64,
     pub price: f64,
     pub volume: f64,
+    pub received_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum OrderStatus {
+    New,
+    Filled,
+    Canceled,
+    Failed,
+}
+
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]
 pub enum OrderSide {
     Buy,
     Sell,
 }
 
-impl fmt::Display for OrderSide {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum OrderType {
     Market,
     Limit,
 }
 
-impl fmt::Display for OrderType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-pub enum OrderStatus {
-    New,
-    PartiallyFilled,
-    Filled,
-    Canceled,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
-    pub id: String,
-    pub source: MarketDataSource,
-    pub source_address: String,
-    pub destination_address: String,
+    pub id: Uuid,
     pub symbol: String,
     pub side: OrderSide,
     pub order_type: OrderType,
+    pub amount: f64,
     pub price: Option<f64>,
-    pub quantity: f64,
     pub status: OrderStatus,
-    pub timestamp_ms: u64,
+    pub source: MarketDataSource,
+    pub created_at: DateTime<Utc>,
+    pub triggering_tick: Option<Box<Tick>>,
 }
 
 impl Order {
-    pub fn market(symbol: &str, quantity: f64, side: OrderSide, source: MarketDataSource, source_address: String, destination_address: String) -> Self {
+    pub fn market(
+        symbol: String,
+        side: OrderSide,
+        amount: f64,
+        source: MarketDataSource,
+        triggering_tick: Option<Box<Tick>>,
+    ) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
-            source,
-            source_address,
-            destination_address,
-            symbol: symbol.to_string(),
+            id: Uuid::new_v4(),
+            symbol,
             side,
             order_type: OrderType::Market,
-            price: None, // Market orders don't have a specific price
-            quantity,
+            amount,
+            price: None,
             status: OrderStatus::New,
-            timestamp_ms: Utc::now().timestamp_millis() as u64,
+            source,
+            created_at: Utc::now(),
+            triggering_tick,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Trade {
+    pub id: Uuid,
+    pub order_id: Uuid,
+    pub symbol: String,
+    pub side: OrderSide,
+    pub amount: f64,
+    pub price: f64,
+    pub source: MarketDataSource,
+    pub executed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fill {
+    pub order_id: Uuid,
+    pub symbol: String,
+    pub side: OrderSide,
+    pub price: f64,
+    pub quantity: f64,
+    pub source: MarketDataSource,
+    pub executed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Latency {
+    pub exchange: MarketDataSource,
+    pub latency_us: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Balance {
+    pub asset: String,
+    pub free: f64,
+    pub locked: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Position {
+    pub symbol: String,
+    pub amount: f64,
+    pub entry_price: f64,
+    pub unrealized_pnl: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Log {
+    pub timestamp: DateTime<Utc>,
+    pub level: String,
+    pub message: String,
+    pub target: String,
 } 

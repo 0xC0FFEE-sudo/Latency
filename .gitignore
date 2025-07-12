@@ -13,3 +13,9 @@ latency-x-core/Config.toml
 
 # OS-specific files
 .DS_Store 
+
+# Node
+node_modules/
+node-v20.3.1-darwin-x64/
+node.tar.gz
+.env 
