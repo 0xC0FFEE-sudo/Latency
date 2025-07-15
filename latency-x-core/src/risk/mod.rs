@@ -1,5 +1,5 @@
 use crate::models::{Fill, OrderSide};
-use crate::persistence::PersistenceManager;
+use crate::persistence::db::DatabaseManager;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,19 +7,23 @@ use tokio::sync::Mutex;
 
 pub struct RiskManager {
     positions: Mutex<HashMap<String, f64>>,
-    persistence: Arc<PersistenceManager>,
+    db_manager: Arc<DatabaseManager>,
 }
 
 impl RiskManager {
-    pub async fn new(persistence: Arc<PersistenceManager>) -> Result<Self> {
-        let positions = persistence.get_positions().await?;
+    pub async fn new(db_manager: Arc<DatabaseManager>) -> Result<Self> {
+        let positions = db_manager.get_positions().await?;
         Ok(Self {
             positions: Mutex::new(positions),
-            persistence,
+            db_manager,
         })
     }
 
     pub async fn on_fill(&self, fill: &Fill) {
+        if let Err(e) = self.db_manager.save_fill(fill).await {
+            tracing::error!("Failed to save fill: {}", e);
+        }
+
         let positions_clone;
         {
             let mut positions = self.positions.lock().await;
@@ -34,7 +38,7 @@ impl RiskManager {
             positions_clone = positions.clone();
         } // Lock is dropped here
 
-        if let Err(e) = self.persistence.set_positions(&positions_clone).await {
+        if let Err(e) = self.db_manager.set_positions(&positions_clone).await {
             tracing::error!("Failed to save positions: {}", e);
         }
     }

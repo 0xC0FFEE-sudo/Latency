@@ -50,12 +50,13 @@ trade_amount_b = 0.01
 # 0.001 means a 0.1% profit.
 min_profit_threshold = 0.001
 
-[redis]
-# The connection URL for the Redis server used for persistence.
-url = "redis://127.0.0.1/"
-
 [coinbase]
 # API key for Coinbase Advanced Trade
 api_key = "YOUR_COINBASE_API_KEY"
 # API secret for Coinbase Advanced Trade
 api_secret = "YOUR_COINBASE_API_SECRET" 
+
+database_url = "sqlite:latency_x.db"
+
+[binance]
+api_key = "YOUR_BINANCE_API_KEY" 

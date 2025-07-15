@@ -2,6 +2,7 @@ pub mod binance;
 // pub mod coinbase;
 pub mod kraken;
 pub mod pump;
+pub mod mock_data;
 
 use crate::models::{Tick, MarketDataSource};
 use anyhow::Result;
@@ -16,5 +17,6 @@ pub trait Connector: Send + Sync {
         symbols: &[String],
         sender: mpsc::Sender<Tick>,
     ) -> Result<()>;
+
     fn get_source(&self) -> MarketDataSource;
 } 

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use std::fmt;
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]
@@ -10,6 +9,7 @@ pub enum MarketDataSource {
     Kraken,
     Coinbase,
     PumpFun,
+    Strategy,
 }
 
 impl std::fmt::Display for MarketDataSource {
@@ -19,6 +19,7 @@ impl std::fmt::Display for MarketDataSource {
             MarketDataSource::Kraken => write!(f, "Kraken"),
             MarketDataSource::Coinbase => write!(f, "Coinbase"),
             MarketDataSource::PumpFun => write!(f, "Pump.fun"),
+            MarketDataSource::Strategy => write!(f, "Strategy"),
         }
     }
 }
@@ -32,7 +33,7 @@ pub struct Tick {
     pub received_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Display)]
 pub enum OrderStatus {
     New,
     Filled,

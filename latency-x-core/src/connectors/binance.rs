@@ -21,9 +21,11 @@ use chrono::{self, Utc};
 use tracing::{info, warn, error};
 use crate::dashboard::events::DashboardEvent;
 use tokio::sync::broadcast;
+use crate::persistence::db::DatabaseManager;
+use uuid::Uuid;
 
-const BINANCE_API_KEY: &str = "YOUR_API_KEY";
-const BINANCE_API_SECRET: &str = "YOUR_API_SECRET";
+const BINANCE_API_KEY: &str = "YOUR_BINANCE_API_KEY";
+const BINANCE_API_SECRET: &str = "YOUR_BINANCE_API_SECRET";
 const BINANCE_API_URL: &str = "https://api.binance.com";
 
 pub struct BinanceConnector {
@@ -31,6 +33,7 @@ pub struct BinanceConnector {
     settlement: Arc<dyn Settlement>,
     fill_sender: Option<Sender<Fill>>,
     dashboard_tx: broadcast::Sender<DashboardEvent>,
+    db_manager: Arc<DatabaseManager>,
 }
 
 impl BinanceConnector {
@@ -38,12 +41,14 @@ impl BinanceConnector {
         settlement: Arc<dyn Settlement>,
         fill_sender: Option<Sender<Fill>>,
         dashboard_tx: broadcast::Sender<DashboardEvent>,
+        db_manager: Arc<DatabaseManager>,
     ) -> Self {
         Self {
             http_client: Client::new(),
             settlement,
             fill_sender,
             dashboard_tx,
+            db_manager,
         }
     }
 
@@ -55,6 +60,7 @@ impl BinanceConnector {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct BinanceTrade {
     #[serde(rename = "s")]
     symbol: String,
@@ -208,7 +214,7 @@ impl ExecutionGateway for BinanceConnector {
         }
 
         let trade = crate::models::Trade {
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             order_id: fill.order_id,
             symbol: fill.symbol.clone(),
             side: fill.side,
@@ -217,6 +223,9 @@ impl ExecutionGateway for BinanceConnector {
             source: fill.source,
             executed_at: fill.executed_at,
         };
+        if let Err(e) = self.db_manager.save_trade(&trade).await {
+            error!("Failed to save trade to DB: {}", e);
+        }
         let _ = self.dashboard_tx.send(DashboardEvent::Trade(trade));
 
         self.settlement.send_order(&order).await?;

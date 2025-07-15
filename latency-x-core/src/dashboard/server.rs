@@ -1,46 +1,54 @@
 use crate::dashboard::events::DashboardEvent;
+use crate::persistence::db::DatabaseManager;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
-    response::IntoResponse,
+    response::{IntoResponse, Json},
     routing::get,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tower_http::services::ServeDir;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::info;
 
 #[derive(Clone)]
 struct AppState {
     tx: broadcast::Sender<DashboardEvent>,
+    db: Arc<DatabaseManager>,
 }
 
-pub async fn start_dashboard_server(tx: broadcast::Sender<DashboardEvent>) {
+pub async fn start_dashboard_server(tx: broadcast::Sender<DashboardEvent>, db: Arc<DatabaseManager>) {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
     
-    let app_state = AppState { tx };
+    let app_state = AppState { tx, db };
 
     let app = Router::new()
         .route("/api/health", get(|| async { "OK" }))
         .route("/ws", get(websocket_handler))
-        .fallback_service(ServeDir::new("latency-x-dashboard/dist"))
+        .route("/api/trades", get(get_trades_handler))
+        .fallback_service(ServeDir::new("../latency-x-dashboard/dist"))
         .with_state(Arc::new(app_state))
         .layer(cors);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    info!("Dashboard server listening on {}", addr);
-
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn get_trades_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match state.db.get_trades().await {
+        Ok(trades) => Json(trades).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to get trades: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+        }
+    }
 }
 
 #[axum::debug_handler]

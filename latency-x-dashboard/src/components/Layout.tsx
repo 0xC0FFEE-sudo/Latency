@@ -1,8 +1,8 @@
-import { Outlet } from "react-router-dom";
+
 import { NavLink } from "react-router-dom";
 import { Settings, Home, LineChart, FileText } from "lucide-react";
 
-export function Layout({ isConnected }: { isConnected: boolean }) {
+export function Layout({ children }: { children: React.ReactNode }) {
     return (
         <div className="flex min-h-screen w-full flex-col bg-muted/40">
             <aside className="fixed inset-y-0 left-0 z-10 hidden w-60 flex-col border-r bg-background sm:flex">
@@ -25,16 +25,10 @@ export function Layout({ isConnected }: { isConnected: boolean }) {
                         Settings
                     </NavLink>
                 </nav>
-                <div className="mt-auto p-4">
-                     <div className="flex items-center gap-2">
-                        <div className={`h-3 w-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-                    </div>
-                </div>
             </aside>
             <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-60">
                 <main className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
-                    <Outlet />
+                    {children}
                 </main>
             </div>
         </div>

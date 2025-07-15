@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::connect_async;
 use url::Url;
-use crate::config::KrakenConfig;
+use crate::config::ExchangeConfig;
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
 use chrono::Utc;
@@ -25,6 +25,7 @@ use crate::dashboard::events::DashboardEvent;
 use tokio::sync::broadcast;
 use tracing::warn;
 use uuid::Uuid;
+use crate::persistence::db::DatabaseManager;
 
 
 const KRAKEN_WSS_URL: &str = "wss://ws.kraken.com/";
@@ -35,14 +36,16 @@ pub struct KrakenConnector {
     settlement: Arc<dyn Settlement>,
     fill_sender: Option<Sender<Fill>>,
     dashboard_tx: broadcast::Sender<DashboardEvent>,
+    db_manager: Arc<DatabaseManager>,
 }
 
 impl KrakenConnector {
     pub fn new(
-        kraken_config: &KrakenConfig,
+        kraken_config: &ExchangeConfig,
         settlement: Arc<dyn Settlement>,
         fill_sender: Option<Sender<Fill>>,
         dashboard_tx: broadcast::Sender<DashboardEvent>,
+        db_manager: Arc<DatabaseManager>,
     ) -> Self {
         Self {
             api_key: kraken_config.api_key.clone(),
@@ -50,6 +53,7 @@ impl KrakenConnector {
             settlement,
             fill_sender,
             dashboard_tx,
+            db_manager,
         }
     }
 
@@ -111,7 +115,7 @@ impl Connector for KrakenConnector {
                         for trade in trades {
                             let price = trade[0].as_str().unwrap_or("0").parse::<f64>().map_err(|e| backoff::Error::permanent(e.into()))?;
                             let volume = trade[1].as_str().unwrap_or("0").parse::<f64>().map_err(|e| backoff::Error::permanent(e.into()))?;
-                            let timestamp = trade[2].as_str().unwrap_or("0").parse::<f64>().map_err(|e| backoff::Error::permanent(e.into()))?;
+                            let _timestamp = trade[2].as_str().unwrap_or("0").parse::<f64>().map_err(|e| backoff::Error::permanent(e.into()))?;
                             let symbol = v[3].as_str().unwrap_or_default().to_string();
 
                             let tick = Tick {
@@ -246,6 +250,9 @@ impl ExecutionGateway for KrakenConnector {
             executed_at: fill.executed_at,
         };
 
+        if let Err(e) = self.db_manager.save_trade(&trade).await {
+            error!("Failed to save trade to DB: {}", e);
+        }
         let _ = self.dashboard_tx.send(DashboardEvent::Trade(trade));
 
         self.settlement.send_order(&order).await?;

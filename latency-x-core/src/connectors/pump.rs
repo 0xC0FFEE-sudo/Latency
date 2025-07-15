@@ -6,6 +6,7 @@ use solana_sdk::{
     instruction::{Instruction, AccountMeta},
     system_program,
     sysvar::rent,
+
 };
 use std::{error::Error, str::FromStr, sync::Arc};
 use crate::models::{Order, OrderSide};
@@ -22,8 +23,8 @@ const FEE_RECIPIENT_SEED: &[u8] = b"fee_recipient";
 const BONDING_CURVE_SEED: &[u8] = b"bonding-curve";
 
 pub struct PumpConnector {
-    rpc_client: Arc<RpcClient>,
-    signer: Keypair,
+    _rpc_client: Arc<RpcClient>,
+    _signer: Keypair,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
@@ -35,9 +36,13 @@ struct BuyInstructionData {
 }
 
 impl PumpConnector {
+    #[allow(dead_code)]
     pub fn new(rpc_client: Arc<RpcClient>, config: &SolanaConfig) -> Self {
         let signer = Keypair::from_base58_string(&config.private_key);
-        Self { rpc_client, signer }
+        Self {
+            _rpc_client: rpc_client,
+            _signer: signer,
+        }
     }
 
     fn create_buy_instruction(
@@ -64,7 +69,7 @@ impl PumpConnector {
 
         let (bonding_curve, _) = Pubkey::find_program_address(&[BONDING_CURVE_SEED, mint.as_ref()], &program_id);
         
-        let user = self.signer.pubkey();
+        let user = self._signer.pubkey();
         let associated_user = get_associated_token_address(&user, &mint);
         
         // This seems to be the SOL vault of the bonding curve.
@@ -118,17 +123,17 @@ impl ExecutionGateway for PumpConnector {
 
         let instruction = self.create_buy_instruction(&mint_str, token_amount, max_sol_cost)?;
 
-        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let recent_blockhash = self._rpc_client.get_latest_blockhash().await?;
 
         let mut transaction = Transaction::new_with_payer(
             &[instruction],
-            Some(&self.signer.pubkey()),
+            Some(&self._signer.pubkey()),
         );
 
-        transaction.sign(&[&self.signer], recent_blockhash);
+        transaction.sign(&[&self._signer], recent_blockhash);
 
         let signature = self
-            .rpc_client
+            ._rpc_client
             .send_and_confirm_transaction(&transaction)
             .await?;
 

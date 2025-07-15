@@ -17,9 +17,18 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useWebSocket } from "@/hooks/useWebSocket";
-import type { Trade } from "@/hooks/useWebSocket";
 import { Badge } from "@/components/ui/badge"
+
+interface Trade {
+    id: string;
+    order_id: string;
+    symbol: string;
+    side: 'Buy' | 'Sell';
+    amount: number;
+    price: number;
+    source: string;
+    executed_at: string;
+}
 
 export const columns: ColumnDef<Trade>[] = [
     {
@@ -43,24 +52,33 @@ export const columns: ColumnDef<Trade>[] = [
         }
     },
     {
-        accessorKey: "quantity",
-        header: "Quantity",
+        accessorKey: "amount",
+        header: "Amount",
         cell: ({ row }) => {
-            return <div className="text-right font-medium">{row.getValue("quantity")}</div>
+            return <div className="text-right font-medium">{row.getValue("amount")}</div>
         }
     },
     {
-        accessorKey: "timestamp",
+        accessorKey: "executed_at",
         header: "Timestamp",
         cell: ({ row }) => {
-            return <div className="text-right">{new Date(row.getValue("timestamp")).toLocaleString()}</div>
+            return <div className="text-right">{new Date(row.getValue("executed_at")).toLocaleString()}</div>
         }
     },
 ]
 
 export function TradesPage() {
-  const { trades } = useWebSocket('ws://localhost:3000/ws');
+  const [trades, setTrades] = React.useState<Trade[]>([]);
   const [globalFilter, setGlobalFilter] = React.useState('')
+
+  React.useEffect(() => {
+    async function fetchTrades() {
+      const response = await fetch('http://localhost:3000/api/trades');
+      const data = await response.json();
+      setTrades(data);
+    }
+    fetchTrades();
+  }, []);
 
   const table = useReactTable({
     data: trades,

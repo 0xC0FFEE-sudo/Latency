@@ -1,12 +1,10 @@
 use crate::execution::ExecutionGateway;
-use crate::models::{MarketDataSource, Order, OrderSide, Tick, OrderStatus, OrderType};
+use crate::models::{MarketDataSource, Order, OrderSide, Tick};
 use crate::strategies::Strategy;
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
-use chrono;
 use tracing::info;
 use metrics::{counter, gauge};
 
@@ -69,7 +67,7 @@ where
                     let buy_order = Order::market(
                         tick1.symbol.clone(),
                         OrderSide::Buy,
-                        1.0,
+                        self.quantity,
                         MarketDataSource::Binance,
                         Some(Box::new(tick.clone()))
                     );
@@ -77,7 +75,7 @@ where
                     let sell_order = Order::market(
                         tick2.symbol.clone(),
                         OrderSide::Sell,
-                        1.0,
+                        self.quantity,
                         MarketDataSource::Kraken,
                         Some(Box::new(tick.clone()))
                     );
@@ -90,7 +88,7 @@ where
                     let buy_order = Order::market(
                         tick2.symbol.clone(),
                         OrderSide::Buy,
-                        1.0,
+                        self.quantity,
                         MarketDataSource::Kraken,
                         Some(Box::new(tick.clone()))
                     );
@@ -98,7 +96,7 @@ where
                     let sell_order = Order::market(
                         tick1.symbol.clone(),
                         OrderSide::Sell,
-                        1.0,
+                        self.quantity,
                         MarketDataSource::Binance,
                         Some(Box::new(tick.clone()))
                     );
@@ -141,7 +139,7 @@ mod tests {
             symbol: "BTC/USD".to_string(),
             price: 50000.0,
             volume: 1.0,
-            timestamp_ms: 0,
+            received_at: 0,
         };
 
         let tick2 = Tick {
@@ -149,7 +147,7 @@ mod tests {
             symbol: "BTC/USD".to_string(),
             price: 50200.0,
             volume: 1.0,
-            timestamp_ms: 0,
+            received_at: 0,
         };
 
         // Act

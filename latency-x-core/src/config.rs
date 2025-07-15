@@ -1,24 +1,21 @@
 use serde::Deserialize;
 use std::env;
-use std::error::Error;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct Config {
-    pub kraken: KrakenConfig,
-    // pub helius: HeliusConfig,
+    pub database_url: String,
+    pub binance: ExchangeConfig,
+    pub kraken: ExchangeConfig,
+    pub coinbase: ExchangeConfig,
     pub helius: HeliusConfig,
-    pub solana: SolanaConfig,
-    pub pump_strategy: PumpStrategyConfig,
-    #[serde(default = "default_mev_strategy_config")]
     pub mev_strategy: MevStrategyConfig,
-    #[serde(default = "default_redis_config")]
-    pub redis: RedisConfig,
-    // #[serde(default = "default_coinbase_config")]
-    // pub coinbase: CoinbaseConfig,
+    pub pump_strategy: PumpStrategyConfig,
+    pub solana: SolanaConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct KrakenConfig {
+#[derive(Clone, Debug, Deserialize)]
+pub struct ExchangeConfig {
     pub api_key: String,
     pub api_secret: String,
 }
@@ -28,14 +25,16 @@ pub struct HeliusConfig {
     pub api_key: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct SolanaConfig {
+    pub private_key: String,
     pub rpc_url: String,
     pub ws_url: String,
-    pub private_key: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct PumpStrategyConfig {
     pub buy_token_amount: f64,
     pub max_sol_price_per_token: f64,
@@ -51,6 +50,7 @@ pub struct MevStrategyConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct RedisConfig {
     pub url: String,
 }
@@ -61,6 +61,7 @@ pub struct RedisConfig {
 //     pub api_secret: String,
 // }
 
+#[allow(dead_code)]
 fn default_mev_strategy_config() -> MevStrategyConfig {
     MevStrategyConfig {
         asset_a: "ETH".to_string(),
@@ -71,6 +72,7 @@ fn default_mev_strategy_config() -> MevStrategyConfig {
     }
 }
 
+#[allow(dead_code)]
 fn default_redis_config() -> RedisConfig {
     RedisConfig {
         url: "redis://127.0.0.1/".to_string(),
@@ -85,7 +87,7 @@ fn default_redis_config() -> RedisConfig {
 // }
 
 impl Config {
-    pub fn from_file(path: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn from_file(path: &str) -> anyhow::Result<Self> {
         let settings = config::Config::builder()
             .add_source(config::File::with_name(path))
             .build()?;

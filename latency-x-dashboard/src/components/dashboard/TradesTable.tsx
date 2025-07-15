@@ -1,4 +1,11 @@
 import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card";
+import {
     Table,
     TableBody,
     TableCell,
@@ -6,44 +13,46 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Trade } from "@/hooks/useWebSocket";
 import { Badge } from "@/components/ui/badge";
+import type { Trade } from '@/hooks/useWebSocket';
 
 export function TradesTable({ trades }: { trades: Trade[] }) {
     return (
-        <Card>
+        <Card className="col-span-3">
             <CardHeader>
                 <CardTitle>Recent Trades</CardTitle>
+                <CardDescription>
+                    You made {trades.length} trades this month.
+                </CardDescription>
             </CardHeader>
             <CardContent>
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Symbol</TableHead>
                             <TableHead>Side</TableHead>
-                            <TableHead className="text-right">Price</TableHead>
-                            <TableHead className="text-right">Quantity</TableHead>
-                            <TableHead className="text-right">Time</TableHead>
+                            <TableHead>Symbol</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Price</TableHead>
+                            <TableHead>Time</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {trades.map((trade) => (
                             <TableRow key={trade.order_id}>
-                                <TableCell>{trade.symbol}</TableCell>
                                 <TableCell>
                                     <Badge variant={trade.side === 'Buy' ? 'default' : 'destructive'}>
                                         {trade.side}
                                     </Badge>
                                 </TableCell>
-                                <TableCell className="text-right">{trade.price.toFixed(2)}</TableCell>
-                                <TableCell className="text-right">{trade.quantity}</TableCell>
-                                <TableCell className="text-right">{new Date(trade.timestamp).toLocaleTimeString()}</TableCell>
+                                <TableCell>{trade.symbol}</TableCell>
+                                <TableCell>{trade.quantity}</TableCell>
+                                <TableCell>{trade.price.toFixed(2)}</TableCell>
+                                <TableCell>{new Date(trade.timestamp).toLocaleTimeString()}</TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
                 </Table>
             </CardContent>
         </Card>
-    );
+    )
 } 

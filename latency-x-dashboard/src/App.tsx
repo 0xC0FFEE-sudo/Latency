@@ -1,26 +1,32 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Layout } from './components/Layout';
-import { useWebSocket } from './hooks/useWebSocket';
-import { Overview } from './pages/Overview';
-import { TradesPage } from './pages/Trades';
-import { LogsPage } from './pages/Logs';
-import { SettingsPage } from './pages/Settings';
+import { Layout } from "@/components/Layout";
+import { Overview } from "@/pages/Overview";
+import { TradesPage } from "@/pages/Trades";
+import { LogsPage } from "@/pages/Logs";
+import { SettingsPage } from "@/pages/Settings";
+import { HashRouter as Router, Routes, Route } from "react-router-dom";
+import useLocalStorage from "use-local-storage";
+import { useEffect } from "react";
+
 
 function App() {
-  const { isConnected } = useWebSocket('ws://localhost:3000/ws');
+  const [theme] = useLocalStorage("theme", "light");
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Layout isConnected={isConnected} />}>
-          <Route index element={<Overview />} />
-          <Route path="trades" element={<TradesPage />} />
-          <Route path="logs" element={<LogsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </Router>
-  );
+      <Router>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Overview />} />
+            <Route path="/trades" element={<TradesPage />} />
+            <Route path="/logs" element={<LogsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </Layout>
+      </Router>
+  )
 }
 
-export default App;
+export default App

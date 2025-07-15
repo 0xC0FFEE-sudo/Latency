@@ -8,20 +8,20 @@ mod risk;
 mod settlement;
 mod strategies;
 
-use crate::connectors::{binance::BinanceConnector, kraken::KrakenConnector};
+use crate::connectors::{binance::BinanceConnector, kraken::KrakenConnector, mock_data::MockDataConnector};
 use crate::connectors::Connector;
-use crate::execution::ExecutionGateway;
+
 use crate::models::Fill;
-use crate::persistence::PersistenceManager;
+use crate::persistence::db::DatabaseManager;
 use crate::risk::RiskManager;
-use crate::settlement::{helius::HeliusSettlement, Settlement};
+use crate::settlement::{mock::MockSettlement, Settlement};
 use crate::strategies::arbitrage::Arbitrage;
 use crate::strategies::market_maker::MarketMaker;
 use crate::strategies::Strategy;
 use crate::config::Config;
+use crate::dashboard::server::start_dashboard_server;
 use crate::dashboard::broadcaster_layer::DashboardBroadcastLayer;
 use crate::strategies::mev::MevStrategy;
-use crate::dashboard::server::start_dashboard_server;
 use crate::dashboard::events::DashboardEvent;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -31,6 +31,7 @@ use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 use tokio::sync::broadcast;
+use tracing_subscriber::util::SubscriberInitExt;
 
 /// A high-frequency trading bot in Rust
 #[derive(Parser, Debug)]
@@ -50,6 +51,8 @@ enum StrategyChoice {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let config = Config::from_file("Config.toml")?;
     let (dashboard_tx, _) = broadcast::channel::<DashboardEvent>(1024);
 
     let env_filter = EnvFilter::try_from_default_env()
@@ -76,61 +79,62 @@ async fn main() -> anyhow::Result<()> {
 
     let dashboard_tx_clone = dashboard_tx.clone();
     let dashboard_core = core_ids[3];
-    let core_handle = tokio::spawn(async move {
+    let db_manager = Arc::new(DatabaseManager::new(&config.database_url).await?);
+    db_manager.init().await?;
+    let db_manager_for_dashboard = db_manager.clone();
+    tokio::spawn(async move {
         core_affinity::set_for_current(dashboard_core);
-        start_dashboard_server(dashboard_tx_clone).await;
+        start_dashboard_server(dashboard_tx_clone, db_manager_for_dashboard).await;
     });
-
-    let cli = Cli::parse();
-
-    let config = Config::from_file("latency-x-core/Config.toml").expect("Failed to load config");
-
-    let persistence = Arc::new(PersistenceManager::new(&config.redis)?);
-    let risk_manager = Arc::new(RiskManager::new(persistence).await?);
+    let risk_manager = Arc::new(RiskManager::new(db_manager.clone()).await?);
 
     let (tx, mut rx) = mpsc::channel(1024);
     let (fill_tx, mut fill_rx) = mpsc::channel::<Fill>(1024);
 
-    let settlement: Arc<dyn Settlement> = Arc::new(HeliusSettlement::new(&config.helius)?);
+    let settlement: Arc<dyn Settlement> = Arc::new(MockSettlement::new());
 
-    let binance_connector = Arc::new(BinanceConnector::new(settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone()));
-    let kraken_connector = Arc::new(KrakenConnector::new(&config.kraken, settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone()));
-    let binance_symbols = vec!["btcusdt".to_string()];
-    let kraken_symbols = vec!["BTC/USD".to_string()];
+    // Use mock data connectors for demonstration
+    let binance_mock = Arc::new(MockDataConnector::new(crate::models::MarketDataSource::Binance, 117000.0));
+    let kraken_mock = Arc::new(MockDataConnector::new(crate::models::MarketDataSource::Kraken, 117050.0));
+    
+    // Keep real connectors for execution
+    let binance_connector = Arc::new(BinanceConnector::new(settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone(), db_manager.clone()));
+    let kraken_connector = Arc::new(KrakenConnector::new(&config.kraken, settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone(), db_manager.clone()));
+    
+    let symbols = vec!["BTCUSDT".to_string()];
 
     let binance_tx = tx.clone();
-    let binance_connector_clone = binance_connector.clone();
+    let binance_mock_clone = binance_mock.clone();
+    let binance_symbols = symbols.clone();
     let binance_core = core_ids[0];
     tokio::spawn(async move {
         core_affinity::set_for_current(binance_core);
-        if let Err(e) = binance_connector_clone.subscribe(&binance_symbols, binance_tx).await {
-            tracing::error!("Binance connector error: {}", e);
+        if let Err(e) = binance_mock_clone.subscribe(&binance_symbols, binance_tx).await {
+            tracing::error!("Binance mock connector error: {}", e);
         }
     });
 
     let kraken_tx = tx.clone();
-    let kraken_connector_clone = kraken_connector.clone();
+    let kraken_mock_clone = kraken_mock.clone();
+    let kraken_symbols = symbols.clone();
     let kraken_core = core_ids[1];
     tokio::spawn(async move {
         core_affinity::set_for_current(kraken_core);
-        if let Err(e) = kraken_connector_clone.subscribe(&kraken_symbols, kraken_tx).await {
-            tracing::error!("Kraken connector error: {}", e);
+        if let Err(e) = kraken_mock_clone.subscribe(&kraken_symbols, kraken_tx).await {
+            tracing::error!("Kraken mock connector error: {}", e);
         }
     });
 
-    let binance_execution: Arc<dyn ExecutionGateway> = binance_connector.clone();
-    let kraken_execution: Arc<dyn ExecutionGateway> = kraken_connector.clone();
-    
     let mut strategy: Box<dyn Strategy> = match cli.strategy {
         StrategyChoice::Arbitrage => {
-            Box::new(Arbitrage::new(binance_execution, kraken_execution, 0.0001, 1.0))
+            Box::new(Arbitrage::new(binance_connector.clone(), kraken_connector.clone(), 0.0001, 1.0))
         }
         StrategyChoice::MarketMaker => {
-            Box::new(MarketMaker::new(binance_execution, 0.01, 0.01))
+            Box::new(MarketMaker::new(binance_connector.clone(), 0.01, 0.01, "BTCUSDT".to_string()))
         }
         StrategyChoice::Mev => {
             // For now, we'll only use the binance connector for triangular arbitrage.
-            let mev_execution: Arc<dyn ExecutionGateway> = Arc::new(BinanceConnector::new(settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone()));
+            let mev_execution = Arc::new(BinanceConnector::new(settlement.clone(), Some(fill_tx.clone()), dashboard_tx.clone(), db_manager.clone()));
             Box::new(MevStrategy::new(
                 mev_execution,
                 &config.mev_strategy,
