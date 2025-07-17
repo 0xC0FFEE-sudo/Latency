@@ -8,29 +8,32 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 use metrics::{counter, gauge};
 use chrono::Utc;
+use crate::persistence::db::DatabaseManager;
 
-pub struct MarketMaker<E: ExecutionGateway + ?Sized> {
-    execution_gateway: Arc<E>,
+pub struct MarketMaker {
+    execution_gateway: Arc<dyn ExecutionGateway + Send + Sync>,
     last_price: Arc<Mutex<Option<f64>>>,
     spread: f64,
     quantity: f64,
     symbol: String,
+    db_manager: Arc<DatabaseManager>,
 }
 
-impl<E: ExecutionGateway + ?Sized> MarketMaker<E> {
-    pub fn new(execution_gateway: Arc<E>, spread: f64, quantity: f64, symbol: String) -> Self {
+impl MarketMaker {
+    pub fn new(execution_gateway: Arc<dyn ExecutionGateway + Send + Sync>, spread: f64, quantity: f64, symbol: String, db_manager: Arc<DatabaseManager>) -> Self {
         Self {
             execution_gateway,
             last_price: Arc::new(Mutex::new(None)),
             spread,
             quantity,
             symbol,
+            db_manager,
         }
     }
 }
 
 #[async_trait]
-impl<E: ExecutionGateway + Send + Sync + 'static> Strategy for MarketMaker<E> {
+impl Strategy for MarketMaker {
     async fn on_tick(&mut self, tick: &Tick) -> Result<()> {
         let mut last_price = self.last_price.lock().await;
         gauge!("last_price", "symbol" => tick.symbol.clone()).set(tick.price);
@@ -66,6 +69,8 @@ impl<E: ExecutionGateway + Send + Sync + 'static> Strategy for MarketMaker<E> {
                 triggering_tick: None,
             };
 
+            self.db_manager.save_order(&buy_order).await?;
+            self.db_manager.save_order(&sell_order).await?;
             self.execution_gateway.send_order(buy_order.clone()).await.map_err(|e| anyhow!(e))?;
             counter!("orders_created", "strategy" => "market_maker", "side" => "buy").increment(1);
             
@@ -81,16 +86,20 @@ mod tests {
     use super::*;
     use crate::execution::mock::MockExecutionGateway;
     use crate::models::{MarketDataSource, Tick};
+    use crate::persistence::db::DatabaseManager;
 
     #[tokio::test]
     async fn test_market_maker_creates_orders() {
         // Arrange
         let mut mock_execution_gateway = MockExecutionGateway::new();
+        let db_manager = Arc::new(DatabaseManager::new(":memory:").await.unwrap());
+        db_manager.init().await.unwrap();
+
         mock_execution_gateway.expect_send_order()
             .returning(|_| Ok("test_order_id".to_string()))
             .times(2);
 
-        let mut strategy = MarketMaker::new(Arc::new(mock_execution_gateway), 0.01, 1.0, "BTCUSDT".to_string());
+        let mut strategy = MarketMaker::new(Arc::new(mock_execution_gateway), 0.01, 1.0, "BTCUSDT".to_string(), db_manager);
         let tick = Tick {
             source: MarketDataSource::Binance,
             symbol: "BTCUSDT".to_string(),

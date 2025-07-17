@@ -6,7 +6,6 @@ use solana_sdk::{
     instruction::{Instruction, AccountMeta},
     system_program,
     sysvar::rent,
-
 };
 use std::{error::Error, str::FromStr, sync::Arc};
 use crate::models::{Order, OrderSide};

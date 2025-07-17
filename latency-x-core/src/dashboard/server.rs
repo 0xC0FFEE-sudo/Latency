@@ -33,7 +33,7 @@ pub async fn start_dashboard_server(tx: broadcast::Sender<DashboardEvent>, db: A
         .route("/api/health", get(|| async { "OK" }))
         .route("/ws", get(websocket_handler))
         .route("/api/trades", get(get_trades_handler))
-        .fallback_service(ServeDir::new("../latency-x-dashboard/dist"))
+        .fallback_service(ServeDir::new("latency-x-dashboard/dist"))
         .with_state(Arc::new(app_state))
         .layer(cors);
 

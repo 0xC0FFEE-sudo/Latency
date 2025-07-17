@@ -18,6 +18,8 @@ use chrono::Utc;
 use crate::dashboard::events::DashboardEvent;
 use tokio::sync::broadcast;
 use tracing::warn;
+use cbadv::rest::types::{OrderSide as CoinbaseOrderSide, CreateOrder, ProductId};
+use uuid::Uuid;
 
 pub struct CoinbaseConnector {
     _rest_client: RestClient,
@@ -80,8 +82,38 @@ impl Connector for CoinbaseConnector {
 
 #[async_trait]
 impl ExecutionGateway for CoinbaseConnector {
-    async fn send_order(&self, _order: Order) -> Result<String, Box<dyn Error + Send + Sync>> {
-        // TODO: Implement order sending for Coinbase
-        unimplemented!("Coinbase order sending is not yet implemented")
+    async fn send_order(&self, order: Order) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let side = match order.side {
+            crate::models::OrderSide::Buy => CoinbaseOrderSide::Buy,
+            crate::models::OrderSide::Sell => CoinbaseOrderSide::Sell,
+        };
+
+        let client_order_id = Uuid::new_v4().to_string();
+        let product_id: ProductId = order.symbol.parse()?;
+
+        let new_order = CreateOrder {
+            client_order_id,
+            product_id,
+            side,
+            order_type: order.order_type.to_string(),
+            product_type: None,
+            order_price: order.price.map(|p| p.to_string()),
+            size: Some(order.amount.to_string()),
+            time_in_force: None,
+            cancel_after: None,
+            post_only: None,
+            self_trade_prevention_id: None,
+        };
+
+        let result = self._rest_client.create_order(&new_order).await?;
+
+        if result.success {
+            Ok(result.success_response.unwrap().order_id)
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                result.error_response.unwrap().message,
+            )))
+        }
     }
 } 

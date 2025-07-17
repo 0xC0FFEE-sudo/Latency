@@ -1,5 +1,5 @@
 use crate::execution::ExecutionGateway;
-use crate::models::{MarketDataSource, Order, OrderSide, Tick};
+use crate::models::{MarketDataSource, Order, OrderSide, Tick, OrderType, OrderStatus};
 use crate::strategies::Strategy;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 use metrics::{counter, gauge};
+use crate::persistence::db::DatabaseManager;
 
 pub struct Arbitrage<E1, E2>
 where
@@ -19,6 +20,7 @@ where
     last_tick2: Arc<Mutex<Option<Tick>>>,
     min_spread: f64,
     quantity: f64,
+    db_manager: Arc<DatabaseManager>,
 }
 
 impl<E1, E2> Arbitrage<E1, E2>
@@ -26,7 +28,7 @@ where
     E1: ExecutionGateway + Send + Sync + ?Sized + 'static,
     E2: ExecutionGateway + Send + Sync + ?Sized + 'static,
 {
-    pub fn new(exchange1: Arc<E1>, exchange2: Arc<E2>, min_spread: f64, quantity: f64) -> Self {
+    pub fn new(exchange1: Arc<E1>, exchange2: Arc<E2>, min_spread: f64, quantity: f64, db_manager: Arc<DatabaseManager>) -> Self {
         Self {
             exchange1,
             exchange2,
@@ -34,6 +36,7 @@ where
             last_tick2: Arc::new(Mutex::new(None)),
             min_spread,
             quantity,
+            db_manager,
         }
     }
 }
@@ -64,42 +67,66 @@ where
 
                 if spread > 0.0 {
                     // Buy on exchange1, sell on exchange2
-                    let buy_order = Order::market(
-                        tick1.symbol.clone(),
-                        OrderSide::Buy,
-                        self.quantity,
-                        MarketDataSource::Binance,
-                        Some(Box::new(tick.clone()))
-                    );
+                    let buy_order = Order {
+                        id: Default::default(),
+                        symbol: tick1.symbol.clone(),
+                        side: OrderSide::Buy,
+                        order_type: OrderType::Market,
+                        amount: self.quantity,
+                        price: None,
+                        status: OrderStatus::New,
+                        source: MarketDataSource::Strategy,
+                        created_at: Default::default(),
+                        triggering_tick: Some(Box::new(tick.clone())),
+                    };
 
-                    let sell_order = Order::market(
-                        tick2.symbol.clone(),
-                        OrderSide::Sell,
-                        self.quantity,
-                        MarketDataSource::Kraken,
-                        Some(Box::new(tick.clone()))
-                    );
+                    let sell_order = Order {
+                        id: Default::default(),
+                        symbol: tick2.symbol.clone(),
+                        side: OrderSide::Sell,
+                        order_type: OrderType::Market,
+                        amount: self.quantity,
+                        price: None,
+                        status: OrderStatus::New,
+                        source: MarketDataSource::Strategy,
+                        created_at: Default::default(),
+                        triggering_tick: Some(Box::new(tick.clone())),
+                    };
 
+                    self.db_manager.save_order(&buy_order).await?;
+                    self.db_manager.save_order(&sell_order).await?;
                     self.exchange1.send_order(buy_order).await.map_err(|e| anyhow::anyhow!(e))?;
                     self.exchange2.send_order(sell_order).await.map_err(|e| anyhow::anyhow!(e))?;
 
                 } else {
                     // Buy on exchange2, sell on exchange1
-                    let buy_order = Order::market(
-                        tick2.symbol.clone(),
-                        OrderSide::Buy,
-                        self.quantity,
-                        MarketDataSource::Kraken,
-                        Some(Box::new(tick.clone()))
-                    );
+                    let buy_order = Order {
+                        id: Default::default(),
+                        symbol: tick2.symbol.clone(),
+                        side: OrderSide::Buy,
+                        order_type: OrderType::Market,
+                        amount: self.quantity,
+                        price: None,
+                        status: OrderStatus::New,
+                        source: MarketDataSource::Strategy,
+                        created_at: Default::default(),
+                        triggering_tick: Some(Box::new(tick.clone())),
+                    };
 
-                    let sell_order = Order::market(
-                        tick1.symbol.clone(),
-                        OrderSide::Sell,
-                        self.quantity,
-                        MarketDataSource::Binance,
-                        Some(Box::new(tick.clone()))
-                    );
+                    let sell_order = Order {
+                        id: Default::default(),
+                        symbol: tick1.symbol.clone(),
+                        side: OrderSide::Sell,
+                        order_type: OrderType::Market,
+                        amount: self.quantity,
+                        price: None,
+                        status: OrderStatus::New,
+                        source: MarketDataSource::Strategy,
+                        created_at: Default::default(),
+                        triggering_tick: Some(Box::new(tick.clone())),
+                    };
+                    self.db_manager.save_order(&buy_order).await?;
+                    self.db_manager.save_order(&sell_order).await?;
                     self.exchange2.send_order(buy_order).await.map_err(|e| anyhow::anyhow!(e))?;
                     self.exchange1.send_order(sell_order).await.map_err(|e| anyhow::anyhow!(e))?;
                 }
@@ -115,12 +142,15 @@ mod tests {
     use super::*;
     use crate::execution::mock::MockExecutionGateway;
     use crate::models::{MarketDataSource, Tick};
+    use crate::persistence::db::DatabaseManager;
 
     #[tokio::test]
     async fn test_arbitrage_creates_orders() {
         // Arrange
         let mut mock_execution_gateway1 = MockExecutionGateway::new();
         let mut mock_execution_gateway2 = MockExecutionGateway::new();
+        let db_manager = Arc::new(DatabaseManager::new(":memory:").await.unwrap());
+        db_manager.init().await.unwrap();
 
         mock_execution_gateway1.expect_send_order()
             .withf(|order| order.side == OrderSide::Buy && order.price == Some(50000.0))
@@ -132,7 +162,7 @@ mod tests {
             .returning(|_| Ok("order2".to_string()))
             .times(1);
 
-        let mut strategy = Arbitrage::new(Arc::new(mock_execution_gateway1), Arc::new(mock_execution_gateway2), 100.0, 1.0);
+        let mut strategy = Arbitrage::new(Arc::new(mock_execution_gateway1), Arc::new(mock_execution_gateway2), 100.0, 1.0, db_manager);
 
         let tick1 = Tick {
             source: MarketDataSource::Binance,

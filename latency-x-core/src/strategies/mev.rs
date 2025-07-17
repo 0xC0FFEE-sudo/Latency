@@ -1,9 +1,10 @@
 use crate::{
     config::MevStrategyConfig,
     execution::ExecutionGateway,
-    models::{MarketDataSource, Order, OrderSide, Tick},
+    models::{MarketDataSource, Order, OrderSide, Tick, OrderType, OrderStatus},
     strategies::Strategy,
 };
+use crate::persistence::db::DatabaseManager;
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -32,6 +33,7 @@ pub struct MevStrategy {
     pair_ca: String, // e.g., "ETHUSDT"
     trade_amount_b: f64, // The amount of asset B to start the arbitrage with
     min_profit_threshold: f64, // Minimum profit percentage to execute a trade
+    db_manager: Arc<DatabaseManager>,
 }
 
 #[allow(dead_code)]
@@ -39,6 +41,7 @@ impl MevStrategy {
     pub fn new(
         execution_gw: Arc<dyn ExecutionGateway>,
         config: &MevStrategyConfig,
+        db_manager: Arc<DatabaseManager>,
     ) -> Self {
         let pair_ab = format!("{}{}", config.asset_a, config.asset_b);
         let pair_bc = format!("{}{}", config.asset_b, config.asset_c);
@@ -54,6 +57,7 @@ impl MevStrategy {
             pair_ca,
             trade_amount_b: config.trade_amount_b,
             min_profit_threshold: config.min_profit_threshold,
+            db_manager,
         }
     }
 
@@ -84,39 +88,67 @@ impl MevStrategy {
             );
 
             // Create orders
-            let order1 = Order::market(
-                self.pair_ab.clone(),
-                OrderSide::Buy,
-                amount_a,
-                MarketDataSource::Binance,
-                Some(Box::new(tick.clone())),
-            );
-            let order2 = Order::market(
-                self.pair_ca.clone(),
-                OrderSide::Sell,
-                amount_a,
-                MarketDataSource::Binance,
-                None,
-            );
-            let order3 = Order::market(
-                self.pair_bc.clone(),
-                OrderSide::Sell,
-                amount_c,
-                MarketDataSource::Binance,
-                None,
-            );
+            let order1 = Order {
+                id: Default::default(),
+                symbol: self.pair_ab.clone(),
+                side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                amount: amount_a,
+                price: None,
+                status: OrderStatus::New,
+                source: MarketDataSource::Strategy,
+                created_at: Default::default(),
+                triggering_tick: Some(Box::new(tick.clone())),
+            };
+            let order2 = Order {
+                id: Default::default(),
+                symbol: self.pair_ca.clone(),
+                side: OrderSide::Sell,
+                order_type: OrderType::Market,
+                amount: amount_a,
+                price: None,
+                status: OrderStatus::New,
+                source: MarketDataSource::Strategy,
+                created_at: Default::default(),
+                triggering_tick: None,
+            };
+            let order3 = Order {
+                id: Default::default(),
+                symbol: self.pair_bc.clone(),
+                side: OrderSide::Sell,
+                order_type: OrderType::Market,
+                amount: amount_c,
+                price: None,
+                status: OrderStatus::New,
+                source: MarketDataSource::Strategy,
+                created_at: Default::default(),
+                triggering_tick: None,
+            };
 
+            let db_manager = self.db_manager.clone();
             // Execute orders in sequence
             // In a real scenario, you'd need to handle partial fills and execution delays
             let gw = self.execution_gw.clone();
             tokio::spawn(async move {
+                if let Err(e) = db_manager.save_order(&order1).await {
+                    eprintln!("MEV order 1 failed to save: {}", e);
+                    return;
+                }
                 if let Err(e) = gw.send_order(order1).await {
                     eprintln!("MEV order 1 failed: {}", e);
+                    return;
+                }
+                if let Err(e) = db_manager.save_order(&order2).await {
+                    eprintln!("MEV order 2 failed to save: {}", e);
                     return;
                 }
                 if let Err(e) = gw.send_order(order2).await {
                     eprintln!("MEV order 2 failed: {}", e);
                      return;
+                }
+                if let Err(e) = db_manager.save_order(&order3).await {
+                    eprintln!("MEV order 3 failed to save: {}", e);
+                    return;
                 }
                 if let Err(e) = gw.send_order(order3).await {
                     eprintln!("MEV order 3 failed: {}", e);

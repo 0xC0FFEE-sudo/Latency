@@ -1,0 +1,11 @@
+[helius]
+api_key = "$HELIUS_API_KEY"
+cluster = "mainnet-beta"
+
+[pump_strategy]
+buy_token_amount = 0.1
+max_sol_price_per_token = 0.01
+mint_address = "YourMintAddressHere"
+
+[solana]
+private_key = "$SOLANA_PRIVATE_KEY" 

@@ -17,9 +17,7 @@ async fn main() {
         config.pump_strategy.max_sol_price_per_token,
     );
 
-    let _mint_address = "YourMintAddressHere"; // TODO: Get this from args or config
-
-    if let Err(e) = strategy.run(&config.solana.ws_url).await {
+    if let Err(e) = strategy.run(&config.solana.ws_url, &config.pump_strategy.mint_address).await {
         eprintln!("Error running BuyNewTokenStrategy: {}", e);
     }
 } 

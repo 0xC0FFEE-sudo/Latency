@@ -23,6 +23,7 @@ pub struct ExchangeConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct HeliusConfig {
     pub api_key: String,
+    pub cluster: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -38,6 +39,7 @@ pub struct SolanaConfig {
 pub struct PumpStrategyConfig {
     pub buy_token_amount: f64,
     pub max_sol_price_per_token: f64,
+    pub mint_address: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

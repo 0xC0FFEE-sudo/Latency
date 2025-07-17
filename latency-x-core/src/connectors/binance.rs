@@ -24,8 +24,8 @@ use tokio::sync::broadcast;
 use crate::persistence::db::DatabaseManager;
 use uuid::Uuid;
 
-const BINANCE_API_KEY: &str = "YOUR_BINANCE_API_KEY";
-const BINANCE_API_SECRET: &str = "YOUR_BINANCE_API_SECRET";
+const BINANCE_API_KEY: &str = "YOUR_API_KEY";
+const BINANCE_API_SECRET: &str = "YOUR_API_SECRET";
 const BINANCE_API_URL: &str = "https://api.binance.com";
 
 pub struct BinanceConnector {

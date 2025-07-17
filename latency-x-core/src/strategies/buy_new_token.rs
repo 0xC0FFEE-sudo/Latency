@@ -50,7 +50,7 @@ impl BuyNewTokenStrategy {
         }
     }
 
-    pub async fn run(&mut self, ws_url: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn run(&mut self, ws_url: &str, mint_address: &str) -> Result<(), Box<dyn Error>> {
         println!("Connecting to Solana WebSocket for Pump.fun new tokens...");
 
         let operation = || async {
@@ -71,28 +71,30 @@ impl BuyNewTokenStrategy {
                         if let Ok(decoded_data) = general_purpose::STANDARD.decode(data) {
                             if decoded_data.starts_with(&CREATE_EVENT_DISCRIMINATOR) {
                                 if let Ok(event) = CreateEvent::try_from_slice(&decoded_data[8..]) {
-                                    println!("New token created: {:?}", event);
-                                    println!("Mint: {}", event.mint);
+                                    if event.mint.to_string() == mint_address {
+                                        println!("New token created: {:?}", event);
+                                        println!("Mint: {}", event.mint);
 
-                                    let order = Order {
-                                        id: Uuid::new_v4(),
-                                        symbol: event.mint.to_string(),
-                                        side: OrderSide::Buy,
-                                        order_type: OrderType::Limit,
-                                        amount: self.buy_token_amount,
-                                        price: Some(self.max_sol_price_per_token),
-                                        status: OrderStatus::New,
-                                        source: MarketDataSource::PumpFun,
-                                        created_at: Utc::now(),
-                                        triggering_tick: None,
-                                    };
+                                        let order = Order {
+                                            id: Uuid::new_v4(),
+                                            symbol: event.mint.to_string(),
+                                            side: OrderSide::Buy,
+                                            order_type: OrderType::Limit,
+                                            amount: self.buy_token_amount,
+                                            price: Some(self.max_sol_price_per_token),
+                                            status: OrderStatus::New,
+                                            source: MarketDataSource::PumpFun,
+                                            created_at: Utc::now(),
+                                            triggering_tick: None,
+                                        };
                                     
-                                    match self.execution_gateway.send_order(order).await {
-                                        Ok(order_id) => {
-                                            println!("Successfully sent buy order for {}: {}", event.mint, order_id);
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Error sending buy order for {}: {}", event.mint, e);
+                                        match self.execution_gateway.send_order(order).await {
+                                            Ok(order_id) => {
+                                                println!("Successfully sent buy order for {}: {}", event.mint, order_id);
+                                            }
+                                            Err(e) => {
+                                                eprintln!("Error sending buy order for {}: {}", event.mint, e);
+                                            }
                                         }
                                     }
                                 }

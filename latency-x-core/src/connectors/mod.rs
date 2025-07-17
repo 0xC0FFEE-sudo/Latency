@@ -2,7 +2,6 @@ pub mod binance;
 // pub mod coinbase;
 pub mod kraken;
 pub mod pump;
-pub mod mock_data;
 
 use crate::models::{Tick, MarketDataSource};
 use anyhow::Result;
